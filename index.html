@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#14532d" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="AgroGestión" />
+  <title>AgroGestión</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%2314532d'/%3E%3Cpath d='M25 68h12a10 10 0 1 0 20 0h10a8 8 0 1 0 16 0h4V52l-12-4-6-16H38v20H25v16z' fill='%2386efac'/%3E%3Ccircle cx='47' cy='68' r='6' fill='%2314532d'/%3E%3Ccircle cx='75' cy='68' r='5' fill='%2314532d'/%3E%3C/svg%3E" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f8fafc;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 pb-24">
+  <div id="root"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { getFirestore, doc, getDoc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDO9YZD2rSqvrksvfsYzltEDe6qSp7v15g",
+      authDomain: "agrogestion-camacho.firebaseapp.com",
+      projectId: "agrogestion-camacho",
+      storageBucket: "agrogestion-camacho.firebasestorage.app",
+      messagingSenderId: "901627780078",
+      appId: "1:901627780078:web:5c96595539a63e9ae28cff",
+      measurementId: "G-MNP11EFKJS"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    window.FirebaseBridge = {
+      auth,
+      db,
+      doc,
+      getDoc,
+      setDoc,
+      onSnapshot,
+      signInAnonymously,
+      onAuthStateChanged
+    };
+    window.dispatchEvent(new Event("firebase-ready"));
+  </script>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo, useRef } = React;
+
+    // --- UTILIDADES ---
+    const formatDateES = (isoOrDate) => {
+      if (!isoOrDate) return "";
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(isoOrDate)) return isoOrDate;
+      const clean = String(isoOrDate).split("T")[0];
+      const parts = clean.split("-");
+      if (parts.length === 3) {
+        return `${parts[2]}/${parts[1]}/${parts[0]}`;
+      }
+      return isoOrDate;
+    };
+
+    const todayISO = () => {
+      const d = new Date();
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const formatCurrency = (val) => {
+      const num = Number(val) || 0;
+      return num.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+    };
+
+    // --- CONSTANTES DE MANTENIMIENTO (COLORES EXCEL + INTERVALOS EXACTOS) ---
+    const MAINTENANCE_OPTIONS = [
+      {
+        id: "rev_basica_motor",
+        label: "Revisión Básica Motor (Aceite + Filtro)",
+        badgeClass: "bg-amber-200 text-amber-950 border-amber-300",
+        interval: 300,
+        resets: ["motorOil", "motorOilFilter"]
+      },
+      {
+        id: "rev_completa_motor",
+        label: "Revisión Completa Motor (Aceite + Filtros Aceite/Combustible/Aire)",
+        badgeClass: "bg-amber-200 text-amber-950 border-amber-300",
+        interval: 300,
+        resets: ["motorOil", "motorOilFilter", "airMotorFilter", "fuelPrimaryFilter", "fuelSecondaryFilter"]
+      },
+      {
+        id: "solo_aceite_motor",
+        label: "Solo Aceite Motor",
+        badgeClass: "bg-amber-200 text-amber-950 border-amber-300",
+        interval: 300,
+        resets: ["motorOil"]
+      },
+      {
+        id: "solo_filtro_aceite_motor",
+        label: "Solo Filtro Aceite Motor",
+        badgeClass: "bg-amber-200 text-amber-950 border-amber-300",
+        interval: 300,
+        resets: ["motorOilFilter"]
+      },
+      {
+        id: "servicio_transmision_hidraulico",
+        label: "Servicio Transmisión / Hidráulico (Aceite + Filtro)",
+        badgeClass: "bg-purple-200 text-purple-950 border-purple-300",
+        interval: 600,
+        resets: ["hydraulicOil", "hydraulicFilter"]
+      },
+      {
+        id: "solo_aceite_transmision",
+        label: "Solo Aceite Transmisión / Hidráulico",
+        badgeClass: "bg-purple-200 text-purple-950 border-purple-300",
+        interval: 600,
+        resets: ["hydraulicOil"]
+      },
+      {
+        id: "solo_filtro_transmision",
+        label: "Solo Filtro Transmisión / Hidráulico",
+        badgeClass: "bg-purple-200 text-purple-950 border-purple-300",
+        interval: 600,
+        resets: ["hydraulicFilter"]
+      },
+      {
+        id: "solo_filtro_aire_motor",
+        label: "Solo Filtro Aire Motor",
+        badgeClass: "bg-sky-200 text-sky-950 border-sky-300",
+        interval: 500,
+        resets: ["airMotorFilter"]
+      },
+      {
+        id: "solo_filtro_aire_habitaculo",
+        label: "Solo Filtro Aire Habitáculo",
+        badgeClass: "bg-sky-200 text-sky-950 border-sky-300",
+        interval: 500,
+        resets: ["airCabinFilter"]
+      },
+      {
+        id: "solo_filtro_combustible",
+        label: "Solo Filtro Combustible (Primario y Secundario)",
+        badgeClass: "bg-rose-200 text-rose-950 border-rose-300",
+        interval: 300,
+        resets: ["fuelPrimaryFilter", "fuelSecondaryFilter"]
+      },
+      {
+        id: "solo_filtro_combustible_primario",
+        label: "Solo Filtro Combustible (Primario)",
+        badgeClass: "bg-rose-200 text-rose-950 border-rose-300",
+        interval: 300,
+        resets: ["fuelPrimaryFilter"]
+      },
+      {
+        id: "solo_filtro_combustible_secundario",
+        label: "Solo Filtro Combustible (Secundario)",
+        badgeClass: "bg-rose-200 text-rose-950 border-rose-300",
+        interval: 300,
+        resets: ["fuelSecondaryFilter"]
+      },
+      {
+        id: "relleno_engrase",
+        label: "Relleno de Nivel / Engrase / Revisión Visual",
+        badgeClass: "bg-neutral-800 text-white border-neutral-900",
+        interval: 50,
+        resets: []
+      }
+    ];
+
+    const INVENTORY_CATEGORIES = [
+      "Aceites y Lubricantes",
+      "Filtros y Recambios",
+      "Fitosanitarios",
+      "Abonos y Fertilizantes",
+      "Combustible (Gasoil B)",
+      "Herramientas y Consumibles"
+    ];
+
+    const LABOR_TYPES = [
+      "Poda / Tala",
+      "Quita de Varetas",
+      "Tratamiento Fitosanitario (Cuba)",
+      "Abonado / Fertilización",
+      "Laboreo / Cultivador / Grada",
+      "Desbroce / Picado de Ramón",
+      "Riego",
+      "Recolección / Vibrador",
+      "Transporte / Remolque",
+      "Otra Labor"
+    ];
+
+    // --- DATOS INICIALES (CONTADORES A 0 PARA INTRODUCIR A MANO) ---
+    const INITIAL_TRACTORS = [
+      {
+        id: "mf-390",
+        brand: "Massey Ferguson",
+        model: "390 2WD",
+        plate: "MA 21518 VE",
+        vin: "F11493",
+        year: "1997",
+        engine: "Perkins A4.248 (4.1L 4 cil.)",
+        power: "80 CV",
+        currentHours: 0,
+        oilMotorSpec: "15W-40 + Baño de aire 15W-40",
+        oilMotorLiters: "7,5 L",
+        oilHydraulicSpec: "UTTO 10W-30 / 80W",
+        oilHydraulicLiters: "",
+        filterOilRef: "Agroparts / Mann W940/24",
+        filterAirMotorRef: "Baño de aceite (limpieza cubeta)",
+        filterAirCabinRef: "Sin cabina / N/A",
+        filterFuelPrimaryRef: "CAV 296",
+        filterFuelSecondaryRef: "CAV 296",
+        filterHydraulicRef: "Ref. interna MF",
+        notes: "Filtro de aire en baño de aceite: limpiar cubeta inferior y rellenar con 15W-40 hasta marca.",
+        lastService: {
+          motorOil: 0,
+          motorOilFilter: 0,
+          airMotorFilter: 0,
+          airCabinFilter: 0,
+          fuelPrimaryFilter: 0,
+          fuelSecondaryFilter: 0,
+          hydraulicOil: 0,
+          hydraulicFilter: 0
+        },
+        history: []
+      },
+      {
+        id: "renault-70-34",
+        brand: "Renault",
+        model: "70-34 PA (Tipo R3132)",
+        plate: "",
+        vin: "3203881 (32C3881)",
+        year: "1991",
+        engine: "MWM D226-4 (4.2L 4 cil.)",
+        power: "68 CV",
+        currentHours: 0,
+        oilMotorSpec: "15W-40",
+        oilMotorLiters: "",
+        oilHydraulicSpec: "UTTO / Hidráulico",
+        oilHydraulicLiters: "",
+        filterOilRef: "Mann W940/5",
+        filterAirMotorRef: "Mann C14200",
+        filterAirCabinRef: "Mann CU",
+        filterFuelPrimaryRef: "Mann WK842",
+        filterFuelSecondaryRef: "Mann P917x",
+        filterHydraulicRef: "Mann WH945",
+        notes: "Bastidor troquelado con C desgastada (32C3881).",
+        lastService: {
+          motorOil: 0,
+          motorOilFilter: 0,
+          airMotorFilter: 0,
+          airCabinFilter: 0,
+          fuelPrimaryFilter: 0,
+          fuelSecondaryFilter: 0,
+          hydraulicOil: 0,
+          hydraulicFilter: 0
+        },
+        history: []
+      },
+      {
+        id: "jd-5115m",
+        brand: "John Deere",
+        model: "5115M",
+        plate: "",
+        vin: "",
+        year: "",
+        engine: "John Deere PowerTech 4.5L",
+        power: "115 CV",
+        currentHours: 0,
+        oilMotorSpec: "Plus-50 II 15W-40",
+        oilMotorLiters: "",
+        oilHydraulicSpec: "Hy-Gard",
+        oilHydraulicLiters: "",
+        filterOilRef: "",
+        filterAirMotorRef: "",
+        filterAirCabinRef: "",
+        filterFuelPrimaryRef: "",
+        filterFuelSecondaryRef: "",
+        filterHydraulicRef: "",
+        notes: "",
+        lastService: {
+          motorOil: 0,
+          motorOilFilter: 0,
+          airMotorFilter: 0,
+          airCabinFilter: 0,
+          fuelPrimaryFilter: 0,
+          fuelSecondaryFilter: 0,
+          hydraulicOil: 0,
+          hydraulicFilter: 0
+        },
+        history: []
+      },
+      {
+        id: "jd-2450",
+        brand: "John Deere",
+        model: "2450",
+        plate: "",
+        vin: "",
+        year: "",
+        engine: "John Deere 4239D (3.9L)",
+        power: "70 CV",
+        currentHours: 0,
+        oilMotorSpec: "15W-40",
+        oilMotorLiters: "",
+        oilHydraulicSpec: "Hy-Gard",
+        oilHydraulicLiters: "",
+        filterOilRef: "",
+        filterAirMotorRef: "",
+        filterAirCabinRef: "",
+        filterFuelPrimaryRef: "",
+        filterFuelSecondaryRef: "",
+        filterHydraulicRef: "",
+        notes: "",
+        lastService: {
+          motorOil: 0,
+          motorOilFilter: 0,
+          airMotorFilter: 0,
+          airCabinFilter: 0,
+          fuelPrimaryFilter: 0,
+          fuelSecondaryFilter: 0,
+          hydraulicOil: 0,
+          hydraulicFilter: 0
+        },
+        history: []
+      },
+      {
+        id: "mf-6465",
+        brand: "Massey Ferguson",
+        model: "6465",
+        plate: "",
+        vin: "",
+        year: "",
+        engine: "Perkins 1106C-E60TA (6.0L 6 cil.)",
+        power: "120 CV",
+        currentHours: 0,
+        oilMotorSpec: "15W-40",
+        oilMotorLiters: "",
+        oilHydraulicSpec: "UTTO",
+        oilHydraulicLiters: "",
+        filterOilRef: "",
+        filterAirMotorRef: "",
+        filterAirCabinRef: "",
+        filterFuelPrimaryRef: "",
+        filterFuelSecondaryRef: "",
+        filterHydraulicRef: "",
+        notes: "",
+        lastService: {
+          motorOil: 0,
+          motorOilFilter: 0,
+          airMotorFilter: 0,
+          airCabinFilter: 0,
+          fuelPrimaryFilter: 0,
+          fuelSecondaryFilter: 0,
+          hydraulicOil: 0,
+          hydraulicFilter: 0
+        },
+        history: []
+      },
+      {
+        id: "renault-80pa",
+        brand: "Renault",
+        model: "80PA",
+        plate: "",
+        vin: "",
+        year: "",
+        engine: "MWM D226-4",
+        power: "78 CV",
+        currentHours: 0,
+        oilMotorSpec: "15W-40",
+        oilMotorLiters: "",
+        oilHydraulicSpec: "UTTO",
+        oilHydraulicLiters: "",
+        filterOilRef: "",
+        filterAirMotorRef: "",
+        filterAirCabinRef: "",
+        filterFuelPrimaryRef: "",
+        filterFuelSecondaryRef: "",
+        filterHydraulicRef: "",
+        notes: "",
+        lastService: {
+          motorOil: 0,
+          motorOilFilter: 0,
+          airMotorFilter: 0,
+          airCabinFilter: 0,
+          fuelPrimaryFilter: 0,
+          fuelSecondaryFilter: 0,
+          hydraulicOil: 0,
+          hydraulicFilter: 0
+        },
+        history: []
+      }
+    ];
+
+    const INITIAL_PARCELS = [
+      {
+        id: "parcela-1",
+        name: "Olivar Antequera Principal",
+        crop: "Olivar Hojiblanca",
+        areaHa: 4.5,
+        trees: 480,
+        provincia: "29",
+        municipio: "015",
+        poligono: "12",
+        parcela: "45",
+        needs: [
+          { id: "n1", type: "Litros Cuba", name: "Cuba 2.000 L", quantity: "2 cubas (4.000 L)" },
+          { id: "n2", type: "Fitosanitario", name: "Cobre + Aminoácidos + Potasa", quantity: "Según etiqueta" }
+        ]
+      }
+    ];
+
+    const INITIAL_INVENTORY = [
+      { id: "inv-1", name: "Aceite Motor 15W-40", category: "Aceites y Lubricantes", quantity: 25, unit: "Litros", minStock: 10, notes: "Garrafas de 25L / 5L" },
+      { id: "inv-2", name: "Filtro Gasoil CAV 296", category: "Filtros y Recambios", quantity: 3, unit: "Uds", minStock: 2, notes: "Para Massey Ferguson" },
+      { id: "inv-3", name: "Gasoil B Bonificado", category: "Combustible (Gasoil B)", quantity: 400, unit: "Litros", minStock: 150, notes: "Depósito nave" }
+    ];
+
+    const INITIAL_FINANCES = [];
+
+    // --- COMPONENTE SILUETA SIGPAC ---
+    function SigpacPreview({ provincia = "29", municipio = "015", poligono, parcela, compact = false }) {
+      const [svgPath, setSvgPath] = useState(null);
+      const [areaInfo, setAreaInfo] = useState(null);
+      const [status, setStatus] = useState("idle");
+
+      useEffect(() => {
+        const prov = String(provincia || "").trim();
+        const mun = String(municipio || "").trim();
+        const pol = String(poligono || "").trim();
+        const par = String(parcela || "").trim();
+
+        if (!prov || !mun || !pol || !par) {
+          setSvgPath(null);
+          setStatus("idle");
+          return;
+        }
+
+        let cancelled = false;
+        const timer = setTimeout(async () => {
+          setStatus("loading");
+          try {
+            const url = `https://sigpac-hubcloud.es/servicioconsultassigpac/query/recinfoparc/${prov}/${mun}/0/0/${pol}/${par}.geojson`;
+            const res = await fetch(url);
+            if (!res.ok) throw new Error("No encontrado");
+            const data = await res.json();
+            if (cancelled) return;
+
+            const features = data.features || (data.type === "Feature" ? [data] : []);
+            if (!features.length) {
+              setSvgPath(null);
+              setStatus("notfound");
+              return;
+            }
+
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const rings = [];
+            let totalAreaM2 = 0;
+
+            features.forEach((f) => {
+              if (f.properties && f.properties.dn_surface) {
+                totalAreaM2 += Number(f.properties.dn_surface) || 0;
+              }
+              const geom = f.geometry;
+              if (!geom) return;
+              const polys = geom.type === "Polygon" ? [geom.coordinates] : geom.type === "MultiPolygon" ? geom.coordinates : [];
+              polys.forEach((poly) => {
+                poly.forEach((ring) => {
+                  rings.push(ring);
+                  ring.forEach(([x, y]) => {
+                    if (x < minX) minX = x;
+                    if (y < minY) minY = y;
+                    if (x > maxX) maxX = x;
+                    if (y > maxY) maxY = y;
+                  });
+                });
+              });
+            });
+
+            if (!rings.length || !isFinite(minX)) {
+              setSvgPath(null);
+              setStatus("notfound");
+              return;
+            }
+
+            const width = maxX - minX || 1;
+            const height = maxY - minY || 1;
+            const scale = 160 / Math.max(width, height);
+            const offsetX = (200 - width * scale) / 2;
+            const offsetY = (200 - height * scale) / 2;
+
+            const pathStr = rings
+              .map((ring) =>
+                ring
+                  .map(([x, y], idx) => {
+                    const px = (offsetX + (x - minX) * scale).toFixed(1);
+                    const py = (200 - (offsetY + (y - minY) * scale)).toFixed(1);
+                    return `${idx === 0 ? "M" : "L"}${px},${py}`;
+                  })
+                  .join(" ") + " Z"
+              )
+              .join(" ");
+
+            setSvgPath(pathStr);
+            setAreaInfo(totalAreaM2 > 0 ? (totalAreaM2 / 10000).toFixed(2) + " ha" : null);
+            setStatus("ok");
+          } catch (e) {
+            if (!cancelled) {
+              setSvgPath(null);
+              setStatus("error");
+            }
+          }
+        }, 500);
+
+        return () => {
+          cancelled = true;
+          clearTimeout(timer);
+        };
+      }, [provincia, municipio, poligono, parcela]);
+
+      const visorUrl = `https://sigpac.mapa.gob.es/fega/visor/`;
+
+      if (compact) {
+        if (status !== "ok" || !svgPath) return null;
+        return (
+          <div className="flex flex-col items-center justify-center bg-emerald-50/70 border border-emerald-200 rounded-xl p-2 shrink-0">
+            <svg viewBox="0 0 200 200" className="w-16 h-16">
+              <path d={svgPath} fill="#10b981" fillOpacity="0.3" stroke="#047857" strokeWidth="4" />
+            </svg>
+            {areaInfo && <span className="text-[10px] font-bold text-emerald-800 mt-0.5">{areaInfo}</span>}
+          </div>
+        );
+      }
+
+      return (
+        <div className="mt-3 bg-slate-50 border border-slate-200 rounded-xl p-3 flex flex-col items-center">
+          <div className="w-full flex items-center justify-between text-xs text-slate-600 mb-2">
+            <span className="font-semibold">Vista previa SIGPAC (Pol. {poligono || "-"} / Parc. {parcela || "-"})</span>
+            <a href={visorUrl} target="_blank" rel="noreferrer" className="text-emerald-700 font-semibold underline">
+              Abrir Visor
+            </a>
+          </div>
+          {status === "loading" && <p className="text-xs text-slate-500 py-6">Cargando contorno oficial SIGPAC...</p>}
+          {status === "ok" && svgPath && (
+            <div className="flex flex-col items-center">
+              <svg viewBox="0 0 200 200" className="w-36 h-36 bg-white rounded-lg border border-slate-200 shadow-inner">
+                <path d={svgPath} fill="#10b981" fillOpacity="0.35" stroke="#065f46" strokeWidth="3.5" />
+              </svg>
+              {areaInfo && <span className="text-xs font-bold text-emerald-800 mt-1.5">Superficie SIGPAC: {areaInfo}</span>}
+            </div>
+          )}
+          {(status === "notfound" || status === "error") && (
+            <p className="text-xs text-slate-500 py-4 text-center">
+              No se pudo cargar el contorno automático ahora (comprueba Provincia/Municipio/Polígono/Parcela o conexión).
+            </p>
+          )}
+          {status === "idle" && (
+            <p className="text-xs text-slate-400 py-4 text-center">Introduce Polígono y Parcela para dibujar la forma de la finca.</p>
+          )}
+        </div>
+      );
+    }
+
+    // --- APLICACIÓN PRINCIPAL ---
+    function App() {
+      const [activeTab, setActiveTab] = useState("flota");
+      const [tractors, setTractors] = useState(() => {
+        try {
+          const saved = localStorage.getItem("agrogestion_tractors");
+          return saved ? JSON.parse(saved) : INITIAL_TRACTORS;
+        } catch { return INITIAL_TRACTORS; }
+      });
+      const [parcels, setParcels] = useState(() => {
+        try {
+          const saved = localStorage.getItem("agrogestion_parcels");
+          return saved ? JSON.parse(saved) : INITIAL_PARCELS;
+        } catch { return INITIAL_PARCELS; }
+      });
+      const [labors, setLabors] = useState(() => {
+        try {
+          const saved = localStorage.getItem("agrogestion_labors");
+          return saved ? JSON.parse(saved) : [];
+        } catch { return []; }
+      });
+      const [inventory, setInventory] = useState(() => {
+        try {
+          const saved = localStorage.getItem("agrogestion_inventory");
+          return saved ? JSON.parse(saved) : INITIAL_INVENTORY;
+        } catch { return INITIAL_INVENTORY; }
+      });
+      const [finances, setFinances] = useState(() => {
+        try {
+          const saved = localStorage.getItem("agrogestion_finances");
+          return saved ? JSON.parse(saved) : INITIAL_FINANCES;
+        } catch { return INITIAL_FINANCES; }
+      });
+
+      const [cloudStatus, setCloudStatus] = useState("connecting");
+      const [userId, setUserId] = useState(null);
+      const isRemoteUpdate = useRef(false);
+
+      // UI States Flota
+      const [expandedTractorId, setExpandedTractorId] = useState(null);
+      const [specsModalTractor, setSpecsModalTractor] = useState(null);
+      const [editingTractorForm, setEditingTractorForm] = useState(null);
+      const [hoursModalTractor, setHoursModalTractor] = useState(null);
+      const [newHoursValue, setNewHoursValue] = useState("");
+      const [maintModalTractor, setMaintModalTractor] = useState(null);
+      const [maintForm, setMaintForm] = useState({
+        typeId: MAINTENANCE_OPTIONS[0].id,
+        hours: "",
+        date: todayISO(),
+        cost: "",
+        notes: ""
+      });
+      const [maintDropdownOpen, setMaintDropdownOpen] = useState(false);
+
+      // UI States Fincas y Labores
+      const [parcelModal, setParcelModal] = useState(null);
+      const [laborModal, setLaborModal] = useState(false);
+      const [laborForm, setLaborForm] = useState({
+        date: todayISO(),
+        parcelId: "",
+        type: LABOR_TYPES[0],
+        tractorId: "",
+        hours: "",
+        products: "",
+        notes: ""
+      });
+
+      // UI States Almacén
+      const [selectedCategory, setSelectedCategory] = useState(null);
+      const [inventoryModal, setInventoryModal] = useState(null);
+
+      // UI States Cuentas
+      const [financeModal, setFinanceModal] = useState(null);
+
+      // --- CONEXIÓN FIREBASE EN TIEMPO REAL ---
+      useEffect(() => {
+        const initCloud = () => {
+          const fb = window.FirebaseBridge;
+          if (!fb) return;
+
+          fb.signInAnonymously(fb.auth).catch((err) => {
+            console.error("Auth error:", err);
+            setCloudStatus("offline");
+          });
+
+          const unsubAuth = fb.onAuthStateChanged(fb.auth, (user) => {
+            if (user) {
+              setUserId(user.uid);
+              const docRef = fb.doc(fb.db, "agrogestion_data", "main_workspace");
+              fb.onSnapshot(
+                docRef,
+                (snap) => {
+                  if (snap.exists()) {
+                    const d = snap.data();
+                    isRemoteUpdate.current = true;
+                    if (d.tractors) setTractors(d.tractors);
+                    if (d.parcels) setParcels(d.parcels);
+                    if (d.labors) setLabors(d.labors);
+                    if (d.inventory) setInventory(d.inventory);
+                    if (d.finances) setFinances(d.finances);
+                    setTimeout(() => { isRemoteUpdate.current = false; }, 100);
+                  } else {
+                    fb.setDoc(docRef, {
+                      tractors,
+                      parcels,
+                      labors,
+                      inventory,
+                      finances,
+                      updatedAt: new Date().toISOString()
+                    });
+                  }
+                  setCloudStatus("synced");
+                },
+                (err) => {
+                  console.error("Firestore error:", err);
+                  setCloudStatus("offline");
+                }
+              );
+            }
+          });
+
+          return unsubAuth;
+        };
+
+        if (window.FirebaseBridge) {
+          initCloud();
+        } else {
+          window.addEventListener("firebase-ready", initCloud, { once: true });
+        }
+      }, []);
+
+      // Guardado automático en localStorage y Firebase
+      useEffect(() => {
+        try {
+          localStorage.setItem("agrogestion_tractors", JSON.stringify(tractors));
+          localStorage.setItem("agrogestion_parcels", JSON.stringify(parcels));
+          localStorage.setItem("agrogestion_labors", JSON.stringify(labors));
+          localStorage.setItem("agrogestion_inventory", JSON.stringify(inventory));
+          localStorage.setItem("agrogestion_finances", JSON.stringify(finances));
+        } catch {}
+
+        if (isRemoteUpdate.current) return;
+        const fb = window.FirebaseBridge;
+        if (fb && userId && cloudStatus === "synced") {
+          const docRef = fb.doc(fb.db, "agrogestion_data", "main_workspace");
+          fb.setDoc(docRef, {
+            tractors,
+            parcels,
+            labors,
+            inventory,
+            finances,
+            updatedAt: new Date().toISOString()
+          }).catch(() => setCloudStatus("offline"));
+        }
+      }, [tractors, parcels, labors, inventory, finances, userId]);
+
+      // --- HELPERS TRACTORES ---
+      const getBarData = (tractor, key, interval) => {
+        const last = Number(tractor.lastService?.[key] ?? 0);
+        const current = Number(tractor.currentHours ?? 0);
+        const used = Math.max(0, current - last);
+        const remaining = interval - used;
+        const pct = Math.min(100, Math.max(0, (used / interval) * 100));
+        let barColor = "bg-emerald-500";
+        let textColor = "text-emerald-700";
+        if (remaining <= 0) {
+          barColor = "bg-rose-600";
+          textColor = "text-rose-700 font-bold";
+        } else if (remaining <= 50) {
+          barColor = "bg-amber-500";
+          textColor = "text-amber-700 font-bold";
+        }
+        return { used, remaining, pct, barColor, textColor, interval };
+      };
+
+      const getTractorOverallStatus = (tractor) => {
+        const checks = [
+          getBarData(tractor, "motorOil", 300),
+          getBarData(tractor, "motorOilFilter", 300),
+          getBarData(tractor, "airMotorFilter", 500),
+          getBarData(tractor, "airCabinFilter", 500),
+          getBarData(tractor, "fuelPrimaryFilter", 300),
+          getBarData(tractor, "fuelSecondaryFilter", 300),
+          getBarData(tractor, "hydraulicOil", 600),
+          getBarData(tractor, "hydraulicFilter", 600)
+        ];
+        if (checks.some((c) => c.remaining <= 0)) return { label: "Mantenimiento vencido", cls: "bg-rose-100 text-rose-800 border-rose-200" };
+        if (checks.some((c) => c.remaining <= 50)) return { label: "Próximo servicio", cls: "bg-amber-100 text-amber-800 border-amber-200" };
+        return { label: "Al día", cls: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+      };
+
+      const handleSaveHours = (e) => {
+        e.preventDefault();
+        if (!hoursModalTractor) return;
+        const val = Number(newHoursValue);
+        if (isNaN(val) || val < 0) return;
+        setTractors((prev) =>
+          prev.map((t) => (t.id === hoursModalTractor.id ? { ...t, currentHours: val } : t))
+        );
+        setHoursModalTractor(null);
+      };
+
+      const handleSaveMaintenance = (e) => {
+        e.preventDefault();
+        if (!maintModalTractor) return;
+        const opt = MAINTENANCE_OPTIONS.find((o) => o.id === maintForm.typeId) || MAINTENANCE_OPTIONS[0];
+        const serviceHours = maintForm.hours !== "" ? Number(maintForm.hours) : Number(maintModalTractor.currentHours);
+        const costNum = Number(maintForm.cost) || 0;
+
+        const newRecord = {
+          id: "m-" + Date.now(),
+          typeId: opt.id,
+          label: opt.label,
+          badgeClass: opt.badgeClass,
+          hours: serviceHours,
+          date: maintForm.date || todayISO(),
+          cost: costNum,
+          notes: maintForm.notes
+        };
+
+        setTractors((prev) =>
+          prev.map((t) => {
+            if (t.id !== maintModalTractor.id) return t;
+            const updatedLast = { ...(t.lastService || {}) };
+            opt.resets.forEach((key) => {
+              updatedLast[key] = serviceHours;
+            });
+            return {
+              ...t,
+              currentHours: Math.max(Number(t.currentHours), serviceHours),
+              lastService: updatedLast,
+              history: [newRecord, ...(t.history || [])]
+            };
+          })
+        );
+
+        if (costNum > 0) {
+          setFinances((prev) => [
+            {
+              id: "fin-" + Date.now(),
+              type: "gasto",
+              concept: `${opt.label} - ${maintModalTractor.brand} ${maintModalTractor.model}`,
+              category: "Taller y Recambios",
+              amount: costNum,
+              date: maintForm.date || todayISO()
+            },
+            ...prev
+          ]);
+        }
+
+        setMaintModalTractor(null);
+      };
+
+      const handleDeleteMaintenance = (tractorId, recordId) => {
+        setTractors((prev) =>
+          prev.map((t) => {
+            if (t.id !== tractorId) return t;
+            const remainingHistory = (t.history || []).filter((h) => h.id !== recordId);
+            return { ...t, history: remainingHistory };
+          })
+        );
+      };
+
+      const openNewTractorForm = () => {
+        setEditingTractorForm({
+          isNew: true,
+          id: "tr-" + Date.now(),
+          brand: "",
+          model: "",
+          plate: "",
+          vin: "",
+          year: "",
+          engine: "",
+          power: "",
+          currentHours: 0,
+          oilMotorSpec: "15W-40",
+          oilMotorLiters: "",
+          oilHydraulicSpec: "UTTO",
+          oilHydraulicLiters: "",
+          filterOilRef: "",
+          filterAirMotorRef: "",
+          filterAirCabinRef: "",
+          filterFuelPrimaryRef: "",
+          filterFuelSecondaryRef: "",
+          filterHydraulicRef: "",
+          notes: "",
+          lastService: {
+            motorOil: 0,
+            motorOilFilter: 0,
+            airMotorFilter: 0,
+            airCabinFilter: 0,
+            fuelPrimaryFilter: 0,
+            fuelSecondaryFilter: 0,
+            hydraulicOil: 0,
+            hydraulicFilter: 0
+          },
+          history: []
+        });
+      };
+
+      const handleSaveTractorForm = (e) => {
+        e.preventDefault();
+        if (!editingTractorForm) return;
+        const { isNew, ...cleanTractor } = editingTractorForm;
+        cleanTractor.currentHours = Number(cleanTractor.currentHours) || 0;
+        if (isNew) {
+          setTractors((prev) => [...prev, cleanTractor]);
+        } else {
+          setTractors((prev) => prev.map((t) => (t.id === cleanTractor.id ? cleanTractor : t)));
+          if (specsModalTractor && specsModalTractor.id === cleanTractor.id) {
+            setSpecsModalTractor(cleanTractor);
+          }
+        }
+        setEditingTractorForm(null);
+      };
+
+      // --- HELPERS FINCAS Y LABORES ---
+      const handleSaveParcel = (e) => {
+        e.preventDefault();
+        if (!parcelModal) return;
+        const { isNew, ...cleanParcel } = parcelModal;
+        if (isNew) {
+          setParcels((prev) => [...prev, cleanParcel]);
+        } else {
+          setParcels((prev) => prev.map((p) => (p.id === cleanParcel.id ? cleanParcel : p)));
+        }
+        setParcelModal(null);
+      };
+
+      const handleSaveLabor = (e) => {
+        e.preventDefault();
+        const parcel = parcels.find((p) => p.id === laborForm.parcelId);
+        const tractor = tractors.find((t) => t.id === laborForm.tractorId);
+        const hrs = Number(laborForm.hours) || 0;
+
+        const newLabor = {
+          id: "lab-" + Date.now(),
+          date: laborForm.date || todayISO(),
+          parcelId: laborForm.parcelId,
+          parcelName: parcel ? parcel.name : "Sin finca",
+          type: laborForm.type,
+          tractorId: laborForm.tractorId,
+          tractorName: tractor ? `${tractor.brand} ${tractor.model}` : "",
+          hours: hrs,
+          products: laborForm.products,
+          notes: laborForm.notes
+        };
+
+        setLabors((prev) => [newLabor, ...prev]);
+
+        if (tractor && hrs > 0) {
+          setTractors((prev) =>
+            prev.map((t) =>
+              t.id === tractor.id ? { ...t, currentHours: Number(t.currentHours) + hrs } : t
+            )
+          );
+        }
+
+        setLaborModal(false);
+        setLaborForm({
+          date: todayISO(),
+          parcelId: parcels[0]?.id || "",
+          type: LABOR_TYPES[0],
+          tractorId: "",
+          hours: "",
+          products: "",
+          notes: ""
+        });
+      };
+
+      // --- HELPERS ALMACÉN ---
+      const handleSaveInventory = (e) => {
+        e.preventDefault();
+        if (!inventoryModal) return;
+        const { isNew, ...cleanItem } = inventoryModal;
+        cleanItem.quantity = Number(cleanItem.quantity) || 0;
+        cleanItem.minStock = Number(cleanItem.minStock) || 0;
+        if (isNew) {
+          setInventory((prev) => [...prev, cleanItem]);
+        } else {
+          setInventory((prev) => prev.map((i) => (i.id === cleanItem.id ? cleanItem : i)));
+        }
+        setInventoryModal(null);
+      };
+
+      const updateStockDelta = (id, delta) => {
+        setInventory((prev) =>
+          prev.map((item) =>
+            item.id === id ? { ...item, quantity: Math.max(0, Number(item.quantity) + delta) } : item
+          )
+        );
+      };
+
+      // --- HELPERS CUENTAS ---
+      const financeTotals = useMemo(() => {
+        let ingresos = 0;
+        let gastos = 0;
+        finances.forEach((f) => {
+          if (f.type === "ingreso") ingresos += Number(f.amount) || 0;
+          else gastos += Number(f.amount) || 0;
+        });
+        return { ingresos, gastos, balance: ingresos - gastos };
+      }, [finances]);
+
+      const handleSaveFinance = (e) => {
+        e.preventDefault();
+        if (!financeModal) return;
+        const entry = {
+          id: "fin-" + Date.now(),
+          type: financeModal.type,
+          concept: financeModal.concept,
+          category: financeModal.category,
+          amount: Number(financeModal.amount) || 0,
+          date: financeModal.date || todayISO()
+        };
+        setFinances((prev) => [entry, ...prev]);
+        setFinanceModal(null);
+      };
+
+      // --- RENDER ---
+      return (
+        <div className="min-h-screen bg-slate-50 text-slate-900">
+          {/* CABECERA COMPACTA */}
+          <header className="bg-emerald-950 text-white px-4 py-3.5 sticky top-0 z-30 shadow-md">
+            <div className="max-w-5xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-800 flex items-center justify-center text-emerald-200 font-black text-lg border border-emerald-700">
+                  AG
+                </div>
+                <div>
+                  <h1 className="font-bold text-base leading-tight tracking-tight">AgroGestión</h1>
+                  <p className="text-[11px] text-emerald-300">Cuaderno, Flota y Fincas</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full bg-emerald-900/90 border border-emerald-800">
+                <span
+                  className={`w-2 h-2 rounded-full ${
+                    cloudStatus === "synced"
+                      ? "bg-emerald-400"
+                      : cloudStatus === "connecting"
+                      ? "bg-amber-400 animate-pulse"
+                      : "bg-rose-400"
+                  }`}
+                />
+                <span className="text-emerald-100 font-medium">
+                  {cloudStatus === "synced" ? "Nube activa" : cloudStatus === "connecting" ? "Conectando..." : "Local"}
+                </span>
+              </div>
+            </div>
+          </header>
+
+          {/* CONTENIDO PRINCIPAL */}
+          <main className="max-w-5xl mx-auto px-4 pt-5 pb-28">
+            {/* ==================== PESTAÑA 1: FLOTA ==================== */}
+            {activeTab === "flota" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                      <svg className="w-6 h-6 text-emerald-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M3 4h9l1 7"/><path d="M4 11V4"/><path d="M8 10V4"/><path d="M18 5c-.6 0-1 .4-1 1v5.6"/><path d="m10 11 11 .9c.6 0 .9.5.8 1.1l-.8 5h-1"/><circle cx="7" cy="15" r="4"/><circle cx="18" cy="18" r="2"/>
+                      </svg>
+                      Flota de Maquinaria
+                    </h2>
+                    <p className="text-xs text-slate-500">Pulsa sobre un equipo o tractor para ver sus contadores y mantenimientos</p>
+                  </div>
+                  <button
+                    onClick={openNewTractorForm}
+                    className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm active:scale-95 transition"
+                  >
+                    + Añadir Maquinaria
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3.5 items-start">
+                  {tractors.map((tractor) => {
+                    const isExpanded = expandedTractorId === tractor.id;
+                    const status = getTractorOverallStatus(tractor);
+
+                    const bMotorOil = getBarData(tractor, "motorOil", 300);
+                    const bMotorFilter = getBarData(tractor, "motorOilFilter", 300);
+                    const bAirMotor = getBarData(tractor, "airMotorFilter", 500);
+
+                    const bAirCabin = getBarData(tractor, "airCabinFilter", 500);
+                    const bFuelPrim = getBarData(tractor, "fuelPrimaryFilter", 300);
+                    const bFuelSec = getBarData(tractor, "fuelSecondaryFilter", 300);
+
+                    const bHydOil = getBarData(tractor, "hydraulicOil", 600);
+                    const bHydFilter = getBarData(tractor, "hydraulicFilter", 600);
+
+                    return (
+                      <div
+                        key={tractor.id}
+                        className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden transition"
+                      >
+                        {/* CABECERA COMPACTA CLICABLE */}
+                        <button
+                          type="button"
+                          onClick={() => setExpandedTractorId(isExpanded ? null : tractor.id)}
+                          className="w-full px-4 py-3.5 flex items-center justify-between text-left hover:bg-slate-50/80 transition"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 pr-2">
+                            <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                              status.label === "Mantenimiento vencido"
+                                ? "bg-rose-50 text-rose-700 border-rose-200"
+                                : status.label === "Próximo servicio"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                            }`}>
+                              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 4h9l1 7"/><path d="M4 11V4"/><path d="M8 10V4"/><path d="M18 5c-.6 0-1 .4-1 1v5.6"/><path d="m10 11 11 .9c.6 0 .9.5.8 1.1l-.8 5h-1"/><circle cx="7" cy="15" r="4"/><circle cx="18" cy="18" r="2"/>
+                              </svg>
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-extrabold text-base text-slate-900 truncate">
+                                  {tractor.brand} {tractor.model}
+                                </h3>
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${status.cls}`}>
+                                  {status.label}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 shrink-0">
+                            <div className="text-right">
+                              <span className="text-lg font-black text-slate-900">{tractor.currentHours}</span>
+                              <span className="text-xs font-bold text-slate-500 ml-0.5">h</span>
+                            </div>
+                            <span className="text-slate-400 text-sm font-bold">{isExpanded ? "▲" : "▼"}</span>
+                          </div>
+                        </button>
+
+                        {/* CONTENIDO DESPLEGADO */}
+                        {isExpanded && (
+                          <div className="px-4 pb-4 pt-2 border-t border-slate-100 space-y-4">
+                            {/* BOTONES RÁPIDOS */}
+                            <div className="grid grid-cols-3 gap-2">
+                              <button
+                                onClick={() => {
+                                  setHoursModalTractor(tractor);
+                                  setNewHoursValue(String(tractor.currentHours));
+                                }}
+                                className="bg-slate-900 text-white text-xs font-bold py-2.5 px-2 rounded-xl hover:bg-slate-800 active:scale-95 transition"
+                              >
+                                Actualizar Horas
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setMaintModalTractor(tractor);
+                                  setMaintForm({
+                                    typeId: MAINTENANCE_OPTIONS[0].id,
+                                    hours: String(tractor.currentHours),
+                                    date: todayISO(),
+                                    cost: "",
+                                    notes: ""
+                                  });
+                                  setMaintDropdownOpen(false);
+                                }}
+                                className="bg-emerald-700 text-white text-xs font-bold py-2.5 px-2 rounded-xl hover:bg-emerald-800 active:scale-95 transition"
+                              >
+                                + Mantenimiento
+                              </button>
+                              <button
+                                onClick={() => setSpecsModalTractor(tractor)}
+                                className="bg-slate-100 text-slate-800 border border-slate-200 text-xs font-bold py-2.5 px-2 rounded-xl hover:bg-slate-200 active:scale-95 transition"
+                              >
+                                Ficha Técnica
+                              </button>
+                            </div>
+
+                            {/* BLOQUE 1: MOTOR */}
+                            <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-3 space-y-2.5">
+                              <div className="text-xs font-black uppercase tracking-wider text-amber-900">Motor</div>
+                              {[
+                                { label: "Aceite Motor", data: bMotorOil },
+                                { label: "Filtro Aceite Motor", data: bMotorFilter },
+                                { label: "Filtro de Aire Motor", data: bAirMotor }
+                              ].map((item) => (
+                                <div key={item.label}>
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="font-semibold text-slate-700">{item.label}</span>
+                                    <span className={item.data.textColor}>
+                                      {item.data.remaining > 0
+                                        ? `Quedan ${item.data.remaining} h (cada ${item.data.interval} h)`
+                                        : `Pasado ${Math.abs(item.data.remaining)} h`}
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-white rounded-full overflow-hidden border border-amber-200/60">
+                                    <div className={`h-full ${item.data.barColor}`} style={{ width: `${item.data.pct}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* BLOQUE 2: FILTROS */}
+                            <div className="bg-sky-50/60 border border-sky-200/80 rounded-xl p-3 space-y-2.5">
+                              <div className="text-xs font-black uppercase tracking-wider text-sky-900">Filtros</div>
+                              {[
+                                { label: "Filtro de Aire Habitáculo", data: bAirCabin },
+                                { label: "Filtro Combustible (Primario)", data: bFuelPrim },
+                                { label: "Filtro Combustible (Secundario)", data: bFuelSec }
+                              ].map((item) => (
+                                <div key={item.label}>
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="font-semibold text-slate-700">{item.label}</span>
+                                    <span className={item.data.textColor}>
+                                      {item.data.remaining > 0
+                                        ? `Quedan ${item.data.remaining} h (cada ${item.data.interval} h)`
+                                        : `Pasado ${Math.abs(item.data.remaining)} h`}
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-white rounded-full overflow-hidden border border-sky-200/60">
+                                    <div className={`h-full ${item.data.barColor}`} style={{ width: `${item.data.pct}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* BLOQUE 3: ACEITE HIDRÁULICO/TRANSMISIÓN */}
+                            <div className="bg-purple-50/60 border border-purple-200/80 rounded-xl p-3 space-y-2.5">
+                              <div className="text-xs font-black uppercase tracking-wider text-purple-900">
+                                Aceite Hidráulico / Transmisión
+                              </div>
+                              {[
+                                { label: "Aceite Hidráulico / Transmisión", data: bHydOil },
+                                { label: "Filtro Hidráulico / Transmisión", data: bHydFilter }
+                              ].map((item) => (
+                                <div key={item.label}>
+                                  <div className="flex justify-between text-xs mb-1">
+                                    <span className="font-semibold text-slate-700">{item.label}</span>
+                                    <span className={item.data.textColor}>
+                                      {item.data.remaining > 0
+                                        ? `Quedan ${item.data.remaining} h (cada ${item.data.interval} h)`
+                                        : `Pasado ${Math.abs(item.data.remaining)} h`}
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-2 bg-white rounded-full overflow-hidden border border-purple-200/60">
+                                    <div className={`h-full ${item.data.barColor}`} style={{ width: `${item.data.pct}%` }} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* BLOQUE 4: MANTENIMIENTOS ANTIGUOS */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3">
+                              <div className="text-xs font-black uppercase tracking-wider text-slate-700 mb-2">
+                                Mantenimientos Antiguos
+                              </div>
+                              {!tractor.history || tractor.history.length === 0 ? (
+                                <p className="text-xs text-slate-400 italic">Aún no hay mantenimientos registrados.</p>
+                              ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                  {tractor.history.map((rec) => (
+                                    <div
+                                      key={rec.id}
+                                      className="bg-white border border-slate-200 rounded-lg p-2 flex items-start justify-between gap-2"
+                                    >
+                                      <div className="min-w-0">
+                                        <span
+                                          className={`inline-block text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                                            rec.badgeClass || "bg-slate-100 text-slate-800"
+                                          }`}
+                                        >
+                                          {rec.label}
+                                        </span>
+                                        <div className="text-[11px] text-slate-600 mt-1 font-medium">
+                                          {formatDateES(rec.date)} · <strong>{rec.hours} h</strong>
+                                          {rec.cost > 0 ? ` · ${formatCurrency(rec.cost)}` : ""}
+                                        </div>
+                                        {rec.notes && <p className="text-[11px] text-slate-500 mt-0.5">{rec.notes}</p>}
+                                      </div>
+                                      <button
+                                        onClick={() => handleDeleteMaintenance(tractor.id, rec.id)}
+                                        title="Eliminar registro"
+                                        className="text-rose-500 hover:text-rose-700 text-xs font-bold px-2 py-1 rounded hover:bg-rose-50 shrink-0"
+                                      >
+                                        Borrar
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== PESTAÑA 2: FINCAS Y LABORES ==================== */}
+            {activeTab === "fincas" && (
+              <div className="space-y-6">
+                {/* SECCIÓN PARCELAS */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                        <svg className="w-6 h-6 text-emerald-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+                        </svg>
+                        Mis Fincas y Parcelas
+                      </h2>
+                      <p className="text-xs text-slate-500">SIGPAC, contorno de parcela y necesidades de productos</p>
+                    </div>
+                    <button
+                      onClick={() =>
+                        setParcelModal({
+                          isNew: true,
+                          id: "parc-" + Date.now(),
+                          name: "",
+                          crop: "Olivar Hojiblanca",
+                          areaHa: "",
+                          trees: "",
+                          provincia: "29",
+                          municipio: "015",
+                          poligono: "",
+                          parcela: "",
+                          needs: []
+                        })
+                      }
+                      className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm"
+                    >
+                      + Añadir Finca
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    {parcels.map((p) => (
+                      <div key={p.id} className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="font-extrabold text-base text-slate-900">{p.name}</h3>
+                            <p className="text-xs text-emerald-700 font-semibold">{p.crop}</p>
+                            <div className="flex flex-wrap gap-2 mt-1.5 text-[11px] text-slate-600">
+                              {p.areaHa && <span className="bg-slate-100 px-2 py-0.5 rounded font-medium">{p.areaHa} ha</span>}
+                              {p.trees && <span className="bg-slate-100 px-2 py-0.5 rounded font-medium">{p.trees} olivos</span>}
+                              {(p.poligono || p.parcela) && (
+                                <span className="bg-emerald-50 text-emerald-900 border border-emerald-200 px-2 py-0.5 rounded font-bold">
+                                  Pol. {p.poligono || "-"} · Parc. {p.parcela || "-"}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <SigpacPreview
+                            provincia={p.provincia || "29"}
+                            municipio={p.municipio || "015"}
+                            poligono={p.poligono}
+                            parcela={p.parcela}
+                            compact={true}
+                          />
+                        </div>
+
+                        {/* PRODUCTOS NECESARIOS EN LA FINCA */}
+                        {p.needs && p.needs.length > 0 && (
+                          <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-2.5 space-y-1.5">
+                            <div className="text-[11px] font-extrabold uppercase text-slate-500">
+                              Productos y Necesidades
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {p.needs.map((n) => (
+                                <span
+                                  key={n.id}
+                                  className="text-xs bg-white border border-slate-200 rounded-lg px-2 py-1 text-slate-700"
+                                >
+                                  <strong className="text-emerald-800">{n.type}:</strong> {n.name}{" "}
+                                  {n.quantity ? `(${n.quantity})` : ""}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="flex justify-end pt-1">
+                          <button
+                            onClick={() => setParcelModal({ isNew: false, ...p, needs: p.needs || [] })}
+                            className="text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg"
+                          >
+                            Editar Finca
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* SECCIÓN CUADERNO DE CAMPO (LABORES) */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div>
+                      <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                        <svg className="w-6 h-6 text-slate-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        Cuaderno de Campo
+                      </h2>
+                      <p className="text-xs text-slate-500">Apunta labores y suma horas automáticamente al tractor</p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setLaborForm({
+                          date: todayISO(),
+                          parcelId: parcels[0]?.id || "",
+                          type: LABOR_TYPES[0],
+                          tractorId: tractors[0]?.id || "",
+                          hours: "",
+                          products: "",
+                          notes: ""
+                        });
+                        setLaborModal(true);
+                      }}
+                      className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm"
+                    >
+                      + Apuntar Labor
+                    </button>
+                  </div>
+
+                  {labors.length === 0 ? (
+                    <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center text-xs text-slate-500">
+                      No hay labores apuntadas todavía. Pulsa <strong>+ Apuntar Labor</strong> para registrar un trabajo.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {labors.map((l) => (
+                        <div
+                          key={l.id}
+                          className="bg-white rounded-xl border border-slate-200 p-3.5 flex items-start justify-between gap-3"
+                        >
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-md">
+                                {l.type}
+                              </span>
+                              <span className="text-xs font-extrabold text-slate-800">{l.parcelName}</span>
+                              <span className="text-[11px] text-slate-500">{formatDateES(l.date)}</span>
+                            </div>
+                            <div className="text-xs text-slate-600 mt-1">
+                              {l.tractorName && <span>Tractor: <strong>{l.tractorName}</strong> ({l.hours} h) · </span>}
+                              {l.products && <span>Productos: <strong>{l.products}</strong></span>}
+                            </div>
+                            {l.notes && <p className="text-xs text-slate-500 mt-0.5">{l.notes}</p>}
+                          </div>
+                          <button
+                            onClick={() => setLabors((prev) => prev.filter((item) => item.id !== l.id))}
+                            className="text-xs text-rose-500 hover:text-rose-700 font-bold"
+                          >
+                            Borrar
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* ==================== PESTAÑA 3: ALMACÉN ==================== */}
+            {activeTab === "almacen" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                      <svg className="w-6 h-6 text-emerald-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
+                      </svg>
+                      Almacén y Nave
+                    </h2>
+                    <p className="text-xs text-slate-500">Selecciona una categoría para ver tu stock</p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      setInventoryModal({
+                        isNew: true,
+                        id: "inv-" + Date.now(),
+                        name: "",
+                        category: selectedCategory || INVENTORY_CATEGORIES[0],
+                        quantity: 1,
+                        unit: "Uds",
+                        minStock: 1,
+                        notes: ""
+                      })
+                    }
+                    className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl shadow-sm"
+                  >
+                    + Nuevo Artículo
+                  </button>
+                </div>
+
+                {/* 6 BOTONES GRANDES DE CATEGORÍA */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                  {INVENTORY_CATEGORIES.map((cat) => {
+                    const count = inventory.filter((i) => i.category === cat).length;
+                    const isSelected = selectedCategory === cat;
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(isSelected ? null : cat)}
+                        className={`p-4 rounded-2xl border text-left transition shadow-sm flex flex-col justify-between min-h-[88px] ${
+                          isSelected
+                            ? "bg-emerald-900 text-white border-emerald-900 ring-2 ring-emerald-500"
+                            : "bg-white text-slate-900 border-slate-200 hover:border-emerald-400"
+                        }`}
+                      >
+                        <span className="font-extrabold text-sm leading-snug">{cat}</span>
+                        <span
+                          className={`text-xs font-bold mt-2 ${
+                            isSelected ? "text-emerald-200" : "text-slate-500"
+                          }`}
+                        >
+                          {count} {count === 1 ? "producto" : "productos"}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* LISTADO DE PRODUCTOS DE LA CATEGORÍA SELECCIONADA */}
+                {selectedCategory && (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-4 space-y-3 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                      <h3 className="font-extrabold text-base text-slate-900">{selectedCategory}</h3>
+                      <button
+                        onClick={() => setSelectedCategory(null)}
+                        className="text-xs font-bold text-slate-500 hover:text-slate-800"
+                      >
+                        Cerrar sección
+                      </button>
+                    </div>
+
+                    {inventory.filter((i) => i.category === selectedCategory).length === 0 ? (
+                      <p className="text-xs text-slate-500 py-4 text-center">
+                        No tienes artículos registrados en <strong>{selectedCategory}</strong>.
+                      </p>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {inventory
+                          .filter((i) => i.category === selectedCategory)
+                          .map((item) => {
+                            const low = Number(item.quantity) <= Number(item.minStock);
+                            return (
+                              <div
+                                key={item.id}
+                                className="border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-3"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-sm text-slate-900">{item.name}</span>
+                                    {low && (
+                                      <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
+                                        Stock bajo
+                                      </span>
+                                    )}
+                                  </div>
+                                  {item.notes && <p className="text-xs text-slate-500 mt-0.5">{item.notes}</p>}
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <button
+                                    onClick={() => updateStockDelta(item.id, -1)}
+                                    className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-slate-200 font-black text-slate-800"
+                                  >
+                                    -
+                                  </button>
+                                  <div className="text-center min-w-[54px]">
+                                    <div className="font-black text-sm text-slate-900">{item.quantity}</div>
+                                    <div className="text-[10px] text-slate-500">{item.unit}</div>
+                                  </div>
+                                  <button
+                                    onClick={() => updateStockDelta(item.id, 1)}
+                                    className="w-8 h-8 rounded-lg bg-emerald-100 hover:bg-emerald-200 font-black text-emerald-900"
+                                  >
+                                    +
+                                  </button>
+                                  <button
+                                    onClick={() => setInventoryModal({ isNew: false, ...item })}
+                                    className="text-xs text-slate-500 hover:text-slate-900 font-bold ml-1"
+                                  >
+                                    Editar
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ==================== PESTAÑA 4: CUENTAS ==================== */}
+            {activeTab === "cuentas" && (
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-extrabold text-slate-900 flex items-center gap-2">
+                      <svg className="w-6 h-6 text-emerald-800 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>
+                      </svg>
+                      Cuentas de Campaña
+                    </h2>
+                    <p className="text-xs text-slate-500">Control de gastos e ingresos agrícolas</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() =>
+                        setFinanceModal({
+                          type: "gasto",
+                          concept: "",
+                          category: "Gasoil / Repuestos",
+                          amount: "",
+                          date: todayISO()
+                        })
+                      }
+                      className="bg-rose-700 hover:bg-rose-800 text-white text-xs font-bold px-3 py-2.5 rounded-xl"
+                    >
+                      - Gasto
+                    </button>
+                    <button
+                      onClick={() =>
+                        setFinanceModal({
+                          type: "ingreso",
+                          concept: "",
+                          category: "Venta Aceituna / Cosecha",
+                          amount: "",
+                          date: todayISO()
+                        })
+                      }
+                      className="bg-emerald-800 hover:bg-emerald-900 text-white text-xs font-bold px-3 py-2.5 rounded-xl"
+                    >
+                      + Ingreso
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3">
+                    <div className="text-[11px] font-bold text-slate-500">Ingresos</div>
+                    <div className="text-base font-black text-emerald-700 mt-0.5">{formatCurrency(financeTotals.ingresos)}</div>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3">
+                    <div className="text-[11px] font-bold text-slate-500">Gastos</div>
+                    <div className="text-base font-black text-rose-700 mt-0.5">{formatCurrency(financeTotals.gastos)}</div>
+                  </div>
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3">
+                    <div className="text-[11px] font-bold text-slate-500">Balance</div>
+                    <div
+                      className={`text-base font-black mt-0.5 ${
+                        financeTotals.balance >= 0 ? "text-slate-900" : "text-rose-700"
+                      }`}
+                    >
+                      {formatCurrency(financeTotals.balance)}
+                    </div>
+                  </div>
+                </div>
+
+                {finances.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center text-xs text-slate-500">
+                    Aún no hay apuntes contables. Registra gastos de gasoil, repuestos, abonos o ingresos de cosecha.
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {finances.map((f) => (
+                      <div
+                        key={f.id}
+                        className="bg-white rounded-xl border border-slate-200 p-3 flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-bold text-sm text-slate-900">{f.concept}</div>
+                          <div className="text-[11px] text-slate-500">
+                            {formatDateES(f.date)} · {f.category}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span
+                            className={`font-black text-sm ${
+                              f.type === "ingreso" ? "text-emerald-700" : "text-rose-700"
+                            }`}
+                          >
+                            {f.type === "ingreso" ? "+" : "-"}
+                            {formatCurrency(f.amount)}
+                          </span>
+                          <button
+                            onClick={() => setFinances((prev) => prev.filter((x) => x.id !== f.id))}
+                            className="text-xs text-slate-400 hover:text-rose-600 font-bold"
+                          >
+                            Borrar
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </main>
+
+          {/* BARRA DE NAVEGACIÓN INFERIOR ÚNICA */}
+          <nav className="fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 z-40 shadow-lg">
+            <div className="max-w-5xl mx-auto grid grid-cols-4">
+              {[
+                {
+                  id: "flota",
+                  label: "Flota",
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 4h9l1 7"/><path d="M4 11V4"/><path d="M8 10V4"/><path d="M18 5c-.6 0-1 .4-1 1v5.6"/><path d="m10 11 11 .9c.6 0 .9.5.8 1.1l-.8 5h-1"/><circle cx="7" cy="15" r="4"/><circle cx="18" cy="18" r="2"/>
+                    </svg>
+                  )
+                },
+                {
+                  id: "fincas",
+                  label: "Fincas",
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21"/><line x1="9" y1="3" x2="9" y2="18"/><line x1="15" y1="6" x2="15" y2="21"/>
+                    </svg>
+                  )
+                },
+                {
+                  id: "almacen",
+                  label: "Almacén",
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>
+                    </svg>
+                  )
+                },
+                {
+                  id: "cuentas",
+                  label: "Cuentas",
+                  icon: (
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>
+                    </svg>
+                  )
+                }
+              ].map((tab) => {
+                const active = activeTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`py-2.5 flex flex-col items-center justify-center gap-1 text-xs font-extrabold tracking-wide transition border-t-2 ${
+                      active
+                        ? "border-emerald-800 text-emerald-900 bg-emerald-50/60"
+                        : "border-transparent text-slate-500 hover:text-slate-800"
+                    }`}
+                  >
+                    {tab.icon}
+                    <span>{tab.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
+          {/* ==================== MODALES ==================== */}
+
+          {/* MODAL ACTUALIZAR HORAS */}
+          {hoursModalTractor && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveHours} className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-4 shadow-xl">
+                <h3 className="font-extrabold text-base text-slate-900">
+                  Horas actuales · {hoursModalTractor.brand} {hoursModalTractor.model}
+                </h3>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Contador del cuadro (horas)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    required
+                    value={newHoursValue}
+                    onChange={(e) => setNewHoursValue(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2.5 text-base font-bold"
+                  />
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setHoursModalTractor(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl">
+                    Guardar Horas
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* MODAL REGISTRAR MANTENIMIENTO */}
+          {maintModalTractor && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form
+                onSubmit={handleSaveMaintenance}
+                className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3.5 shadow-xl max-h-[90vh] overflow-y-auto"
+              >
+                <h3 className="font-extrabold text-base text-slate-900">
+                  Registrar Mantenimiento · {maintModalTractor.brand} {maintModalTractor.model}
+                </h3>
+
+                {/* DESPLEGABLE PERSONALIZADO IGUAL QUE EXCEL */}
+                <div className="relative">
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Tipo de mantenimiento realizado</label>
+                  <button
+                    type="button"
+                    onClick={() => setMaintDropdownOpen(!maintDropdownOpen)}
+                    className="w-full border border-slate-300 rounded-xl p-2.5 bg-white flex items-center justify-between text-left"
+                  >
+                    {(() => {
+                      const sel = MAINTENANCE_OPTIONS.find((o) => o.id === maintForm.typeId) || MAINTENANCE_OPTIONS[0];
+                      return (
+                        <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${sel.badgeClass}`}>
+                          {sel.label}
+                        </span>
+                      );
+                    })()}
+                    <span className="text-slate-500 text-xs font-bold ml-2">▼</span>
+                  </button>
+
+                  {maintDropdownOpen && (
+                    <div className="mt-1.5 border border-slate-200 rounded-xl bg-white shadow-lg p-1.5 space-y-1 max-h-60 overflow-y-auto">
+                      {MAINTENANCE_OPTIONS.map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => {
+                            setMaintForm({ ...maintForm, typeId: opt.id });
+                            setMaintDropdownOpen(false);
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-slate-100 flex items-center justify-between"
+                        >
+                          <span className={`text-xs font-bold px-2.5 py-1 rounded-full border ${opt.badgeClass}`}>
+                            {opt.label}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-400 ml-1 shrink-0">{opt.interval}h</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Horas del tractor</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      required
+                      value={maintForm.hours}
+                      onChange={(e) => setMaintForm({ ...maintForm, hours: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Fecha ({formatDateES(maintForm.date)})</label>
+                    <input
+                      type="date"
+                      required
+                      value={maintForm.date}
+                      onChange={(e) => setMaintForm({ ...maintForm, date: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Coste recambios/aceite (€ opcional)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    placeholder="0.00"
+                    value={maintForm.cost}
+                    onChange={(e) => setMaintForm({ ...maintForm, cost: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Notas / Referencias usadas</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: 7,5L 15W-40 + filtro gasoil CAV"
+                    value={maintForm.notes}
+                    onChange={(e) => setMaintForm({ ...maintForm, notes: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-sm"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setMaintModalTractor(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl">
+                    Guardar Servicio
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* MODAL FICHA TÉCNICA COMPLETA */}
+          {specsModalTractor && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <div className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-4 shadow-xl max-h-[90vh] overflow-y-auto">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                  <div>
+                    <h3 className="font-extrabold text-lg text-slate-900">
+                      {specsModalTractor.brand} {specsModalTractor.model}
+                    </h3>
+                    <p className="text-xs text-slate-500">Ficha Técnica y Referencias de Recambios</p>
+                  </div>
+                  <button
+                    onClick={() => setSpecsModalTractor(null)}
+                    className="text-slate-400 hover:text-slate-800 font-bold text-sm"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 text-xs">
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Matrícula</span>
+                    <strong className="text-slate-900">{specsModalTractor.plate || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Número de Bastidor</span>
+                    <strong className="text-slate-900">{specsModalTractor.vin || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Año</span>
+                    <strong className="text-slate-900">{specsModalTractor.year || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Potencia</span>
+                    <strong className="text-slate-900">{specsModalTractor.power || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl col-span-2">
+                    <span className="text-slate-500 block">Motor</span>
+                    <strong className="text-slate-900">{specsModalTractor.engine || "—"}</strong>
+                  </div>
+                  <div className="bg-amber-50/70 p-2.5 rounded-xl col-span-2 border border-amber-200/60">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-amber-900 mb-1.5">
+                      Aceite Motor
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white/80 p-2 rounded-lg">
+                        <span className="text-amber-800 text-[11px] block">Viscosidad y Tipo</span>
+                        <strong className="text-slate-900">{specsModalTractor.oilMotorSpec || "—"}</strong>
+                      </div>
+                      <div className="bg-white/80 p-2 rounded-lg">
+                        <span className="text-amber-800 text-[11px] block">Cantidad en Litros</span>
+                        <strong className="text-slate-900">{specsModalTractor.oilMotorLiters || "—"}</strong>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-purple-50/70 p-2.5 rounded-xl col-span-2 border border-purple-200/60">
+                    <div className="text-[11px] font-extrabold uppercase tracking-wider text-purple-900 mb-1.5">
+                      Aceite Hidráulico / Transmisión
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white/80 p-2 rounded-lg">
+                        <span className="text-purple-800 text-[11px] block">Viscosidad y Tipo</span>
+                        <strong className="text-slate-900">{specsModalTractor.oilHydraulicSpec || "—"}</strong>
+                      </div>
+                      <div className="bg-white/80 p-2 rounded-lg">
+                        <span className="text-purple-800 text-[11px] block">Cantidad en Litros</span>
+                        <strong className="text-slate-900">{specsModalTractor.oilHydraulicLiters || "—"}</strong>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Filtro Aceite Motor</span>
+                    <strong className="text-slate-900">{specsModalTractor.filterOilRef || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Filtro Hidráulico/Transmisión</span>
+                    <strong className="text-slate-900">{specsModalTractor.filterHydraulicRef || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Filtro de Aire Motor</span>
+                    <strong className="text-slate-900">{specsModalTractor.filterAirMotorRef || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Filtro de Aire Habitáculo</span>
+                    <strong className="text-slate-900">{specsModalTractor.filterAirCabinRef || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Filtro Combustible (Primario)</span>
+                    <strong className="text-slate-900">{specsModalTractor.filterFuelPrimaryRef || "—"}</strong>
+                  </div>
+                  <div className="bg-slate-50 p-2.5 rounded-xl">
+                    <span className="text-slate-500 block">Filtro Combustible (Secundario)</span>
+                    <strong className="text-slate-900">{specsModalTractor.filterFuelSecondaryRef || "—"}</strong>
+                  </div>
+                </div>
+
+                {specsModalTractor.notes && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-950">
+                    <strong>Observaciones:</strong> {specsModalTractor.notes}
+                  </div>
+                )}
+
+                <div className="flex justify-between pt-2">
+                  <button
+                    onClick={() => {
+                      const idToDelete = specsModalTractor.id;
+                      setTractors((prev) => prev.filter((t) => t.id !== idToDelete));
+                      setSpecsModalTractor(null);
+                    }}
+                    className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 rounded-xl"
+                  >
+                    Eliminar Maquinaria
+                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setEditingTractorForm({ isNew: false, ...specsModalTractor });
+                        setSpecsModalTractor(null);
+                      }}
+                      className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl"
+                    >
+                      Modificar Características
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* MODAL CREAR / EDITAR CARACTERÍSTICAS TRACTOR */}
+          {editingTractorForm && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form
+                onSubmit={handleSaveTractorForm}
+                className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-3.5 shadow-xl max-h-[90vh] overflow-y-auto"
+              >
+                <h3 className="font-extrabold text-base text-slate-900">
+                  {editingTractorForm.isNew ? "Nueva Maquinaria" : "Modificar Características"}
+                </h3>
+
+                <div className="text-xs font-black uppercase text-emerald-800 pt-1">1. Identificación</div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Marca *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editingTractorForm.brand}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, brand: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Modelo *</label>
+                    <input
+                      type="text"
+                      required
+                      value={editingTractorForm.model}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, model: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Matrícula</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.plate}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, plate: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Número de Bastidor</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.vin}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, vin: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Año</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.year}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, year: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Potencia (CV)</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.power}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, power: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Motor</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.engine}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, engine: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-xs font-black uppercase text-emerald-800 pt-1">2. Aceites y Capacidades</div>
+                <div className="space-y-2.5">
+                  <div className="bg-amber-50/60 border border-amber-200/80 rounded-xl p-2.5 space-y-2">
+                    <div className="text-[11px] font-extrabold text-amber-900 uppercase">Aceite Motor</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Viscosidad y Tipo</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: 15W-40"
+                          value={editingTractorForm.oilMotorSpec || ""}
+                          onChange={(e) => setEditingTractorForm({ ...editingTractorForm, oilMotorSpec: e.target.value })}
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Cantidad en Litros</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: 7,5 L"
+                          value={editingTractorForm.oilMotorLiters || ""}
+                          onChange={(e) => setEditingTractorForm({ ...editingTractorForm, oilMotorLiters: e.target.value })}
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-50/60 border border-purple-200/80 rounded-xl p-2.5 space-y-2">
+                    <div className="text-[11px] font-extrabold text-purple-900 uppercase">Aceite Hidráulico / Transmisión</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Viscosidad y Tipo</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: UTTO 10W-30"
+                          value={editingTractorForm.oilHydraulicSpec || ""}
+                          onChange={(e) => setEditingTractorForm({ ...editingTractorForm, oilHydraulicSpec: e.target.value })}
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-600 mb-1">Cantidad en Litros</label>
+                        <input
+                          type="text"
+                          placeholder="Ej: 45 L"
+                          value={editingTractorForm.oilHydraulicLiters || ""}
+                          onChange={(e) => setEditingTractorForm({ ...editingTractorForm, oilHydraulicLiters: e.target.value })}
+                          className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-xs font-black uppercase text-emerald-800 pt-1">3. Referencias de Filtros</div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Filtro Aceite Motor</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.filterOilRef}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, filterOilRef: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Filtro Hidráulico / Transmisión</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.filterHydraulicRef}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, filterHydraulicRef: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Filtro de Aire Motor</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.filterAirMotorRef}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, filterAirMotorRef: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Filtro de Aire Habitáculo</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.filterAirCabinRef}
+                      onChange={(e) => setEditingTractorForm({ ...editingTractorForm, filterAirCabinRef: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Filtro Combustible (Primario)</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.filterFuelPrimaryRef}
+                      onChange={(e) =>
+                        setEditingTractorForm({ ...editingTractorForm, filterFuelPrimaryRef: e.target.value })
+                      }
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1">Filtro Combustible (Secundario)</label>
+                    <input
+                      type="text"
+                      value={editingTractorForm.filterFuelSecondaryRef}
+                      onChange={(e) =>
+                        setEditingTractorForm({ ...editingTractorForm, filterFuelSecondaryRef: e.target.value })
+                      }
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">Observaciones</label>
+                  <textarea
+                    rows="2"
+                    value={editingTractorForm.notes}
+                    onChange={(e) => setEditingTractorForm({ ...editingTractorForm, notes: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingTractorForm(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl">
+                    Guardar Maquinaria
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* MODAL AÑADIR / EDITAR FINCA */}
+          {parcelModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form
+                onSubmit={handleSaveParcel}
+                className="bg-white rounded-2xl max-w-lg w-full p-5 space-y-3.5 shadow-xl max-h-[90vh] overflow-y-auto"
+              >
+                <h3 className="font-extrabold text-base text-slate-900">
+                  {parcelModal.isNew ? "Añadir Nueva Finca" : "Editar Finca"}
+                </h3>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Nombre de la Finca *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ej: Olivar Cortijo Alto"
+                      value={parcelModal.name}
+                      onChange={(e) => setParcelModal({ ...parcelModal, name: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Cultivo / Variedad</label>
+                    <input
+                      type="text"
+                      value={parcelModal.crop}
+                      onChange={(e) => setParcelModal({ ...parcelModal, crop: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Hectáreas</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={parcelModal.areaHa}
+                        onChange={(e) => setParcelModal({ ...parcelModal, areaHa: e.target.value })}
+                        className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">Nº Árboles</label>
+                      <input
+                        type="number"
+                        value={parcelModal.trees}
+                        onChange={(e) => setParcelModal({ ...parcelModal, trees: e.target.value })}
+                        className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* REFERENCIA SIGPAC SEPARADA CON ETIQUETAS EXPLÍCITAS */}
+                <div className="border-t border-slate-100 pt-2.5">
+                  <div className="text-xs font-extrabold text-slate-800 mb-2">Referencia SIGPAC</div>
+                  <div className="grid grid-cols-4 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Provincia</label>
+                      <input
+                        type="text"
+                        placeholder="29"
+                        value={parcelModal.provincia ?? "29"}
+                        onChange={(e) => setParcelModal({ ...parcelModal, provincia: e.target.value })}
+                        className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs text-center font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-600 mb-1">Municipio</label>
+                      <input
+                        type="text"
+                        placeholder="015"
+                        value={parcelModal.municipio ?? "015"}
+                        onChange={(e) => setParcelModal({ ...parcelModal, municipio: e.target.value })}
+                        className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs text-center font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-emerald-800 mb-1">Polígono</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: 12"
+                        value={parcelModal.poligono || ""}
+                        onChange={(e) => setParcelModal({ ...parcelModal, poligono: e.target.value })}
+                        className="w-full border-2 border-emerald-300 rounded-xl px-2.5 py-2 text-xs text-center font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-emerald-800 mb-1">Parcela</label>
+                      <input
+                        type="text"
+                        placeholder="Ej: 45"
+                        value={parcelModal.parcela || ""}
+                        onChange={(e) => setParcelModal({ ...parcelModal, parcela: e.target.value })}
+                        className="w-full border-2 border-emerald-300 rounded-xl px-2.5 py-2 text-xs text-center font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <SigpacPreview
+                    provincia={parcelModal.provincia ?? "29"}
+                    municipio={parcelModal.municipio ?? "015"}
+                    poligono={parcelModal.poligono}
+                    parcela={parcelModal.parcela}
+                  />
+                </div>
+
+                {/* PRODUCTOS NECESARIOS */}
+                <div className="border-t border-slate-100 pt-2.5 space-y-2">
+                  <div className="text-xs font-extrabold text-slate-800">Productos Necesarios para esta Finca</div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["Litros Cuba", "Fitosanitario", "Abono", "Otro"].map((tipo) => (
+                      <button
+                        key={tipo}
+                        type="button"
+                        onClick={() =>
+                          setParcelModal({
+                            ...parcelModal,
+                            needs: [
+                              ...(parcelModal.needs || []),
+                              { id: "nd-" + Date.now() + Math.random(), type: tipo, name: "", quantity: "" }
+                            ]
+                          })
+                        }
+                        className="text-[11px] font-bold bg-emerald-50 text-emerald-900 border border-emerald-200 px-2.5 py-1 rounded-lg hover:bg-emerald-100"
+                      >
+                        + {tipo}
+                      </button>
+                    ))}
+                  </div>
+
+                  {(parcelModal.needs || []).map((item, idx) => (
+                    <div key={item.id} className="grid grid-cols-12 gap-1.5 items-center bg-slate-50 p-2 rounded-xl">
+                      <span className="col-span-3 text-[11px] font-bold text-emerald-800 truncate">{item.type}</span>
+                      <input
+                        type="text"
+                        placeholder="Producto / Cuba"
+                        value={item.name}
+                        onChange={(e) => {
+                          const copy = [...parcelModal.needs];
+                          copy[idx] = { ...copy[idx], name: e.target.value };
+                          setParcelModal({ ...parcelModal, needs: copy });
+                        }}
+                        className="col-span-5 border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white"
+                      />
+                      <input
+                        type="text"
+                        placeholder="Cant. / Litros"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const copy = [...parcelModal.needs];
+                          copy[idx] = { ...copy[idx], quantity: e.target.value };
+                          setParcelModal({ ...parcelModal, needs: copy });
+                        }}
+                        className="col-span-3 border border-slate-300 rounded-lg px-2 py-1 text-xs bg-white"
+                      />
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setParcelModal({
+                            ...parcelModal,
+                            needs: parcelModal.needs.filter((_, i) => i !== idx)
+                          })
+                        }
+                        className="col-span-1 text-rose-600 font-bold text-xs text-center"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex justify-between pt-2">
+                  {!parcelModal.isNew ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setParcels((prev) => prev.filter((x) => x.id !== parcelModal.id));
+                        setParcelModal(null);
+                      }}
+                      className="text-xs font-bold text-rose-600 px-3 py-2"
+                    >
+                      Eliminar Finca
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setParcelModal(null)}
+                      className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                    >
+                      Cancelar
+                    </button>
+                    <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl">
+                      Guardar Finca
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* MODAL APUNTAR LABOR */}
+          {laborModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveLabor} className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3 shadow-xl">
+                <h3 className="font-extrabold text-base text-slate-900">Apuntar Labor en Finca</h3>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Finca</label>
+                    <select
+                      value={laborForm.parcelId}
+                      onChange={(e) => setLaborForm({ ...laborForm, parcelId: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs bg-white"
+                    >
+                      {parcels.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Fecha ({formatDateES(laborForm.date)})</label>
+                    <input
+                      type="date"
+                      value={laborForm.date}
+                      onChange={(e) => setLaborForm({ ...laborForm, date: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Tipo de Labor</label>
+                  <select
+                    value={laborForm.type}
+                    onChange={(e) => setLaborForm({ ...laborForm, type: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs bg-white"
+                  >
+                    {LABOR_TYPES.map((lt) => (
+                      <option key={lt} value={lt}>
+                        {lt}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Tractor usado (opcional)</label>
+                    <select
+                      value={laborForm.tractorId}
+                      onChange={(e) => setLaborForm({ ...laborForm, tractorId: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs bg-white"
+                    >
+                      <option value="">Ninguno / Manual</option>
+                      {tractors.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.brand} {t.model}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Horas</label>
+                    <input
+                      type="number"
+                      step="0.5"
+                      placeholder="0"
+                      value={laborForm.hours}
+                      onChange={(e) => setLaborForm({ ...laborForm, hours: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Productos / Dosis (si aplica)</label>
+                  <input
+                    type="text"
+                    placeholder="Ej: Cuba 2000L + 6kg Cobre"
+                    value={laborForm.products}
+                    onChange={(e) => setLaborForm({ ...laborForm, products: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setLaborModal(false)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl">
+                    Guardar Labor
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* MODAL ARTÍCULO ALMACÉN */}
+          {inventoryModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveInventory} className="bg-white rounded-2xl max-w-md w-full p-5 space-y-3 shadow-xl">
+                <h3 className="font-extrabold text-base text-slate-900">
+                  {inventoryModal.isNew ? "Nuevo Artículo en Almacén" : "Editar Artículo"}
+                </h3>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Categoría</label>
+                  <select
+                    value={inventoryModal.category}
+                    onChange={(e) => setInventoryModal({ ...inventoryModal, category: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs bg-white"
+                  >
+                    {INVENTORY_CATEGORIES.map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Nombre del Producto *</label>
+                  <input
+                    type="text"
+                    required
+                    value={inventoryModal.name}
+                    onChange={(e) => setInventoryModal({ ...inventoryModal, name: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Cantidad</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={inventoryModal.quantity}
+                      onChange={(e) => setInventoryModal({ ...inventoryModal, quantity: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Unidad</label>
+                    <input
+                      type="text"
+                      placeholder="Litros / Uds / Kg"
+                      value={inventoryModal.unit}
+                      onChange={(e) => setInventoryModal({ ...inventoryModal, unit: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Aviso mínimo</label>
+                    <input
+                      type="number"
+                      value={inventoryModal.minStock}
+                      onChange={(e) => setInventoryModal({ ...inventoryModal, minStock: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Notas / Referencia</label>
+                  <input
+                    type="text"
+                    value={inventoryModal.notes || ""}
+                    onChange={(e) => setInventoryModal({ ...inventoryModal, notes: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div className="flex justify-between pt-2">
+                  {!inventoryModal.isNew ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInventory((prev) => prev.filter((x) => x.id !== inventoryModal.id));
+                        setInventoryModal(null);
+                      }}
+                      className="text-xs font-bold text-rose-600"
+                    >
+                      Eliminar
+                    </button>
+                  ) : (
+                    <div />
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setInventoryModal(null)}
+                      className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                    >
+                      Cancelar
+                    </button>
+                    <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-emerald-800 rounded-xl">
+                      Guardar
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* MODAL GASTO / INGRESO */}
+          {financeModal && (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+              <form onSubmit={handleSaveFinance} className="bg-white rounded-2xl max-w-sm w-full p-5 space-y-3 shadow-xl">
+                <h3 className="font-extrabold text-base text-slate-900">
+                  {financeModal.type === "ingreso" ? "Nuevo Ingreso" : "Nuevo Gasto"}
+                </h3>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1">Concepto *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ej: 500L Gasoil B / Liquidación aceituna"
+                    value={financeModal.concept}
+                    onChange={(e) => setFinanceModal({ ...financeModal, concept: e.target.value })}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Importe (€) *</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      required
+                      value={financeModal.amount}
+                      onChange={(e) => setFinanceModal({ ...financeModal, amount: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">Fecha ({formatDateES(financeModal.date)})</label>
+                    <input
+                      type="date"
+                      value={financeModal.date}
+                      onChange={(e) => setFinanceModal({ ...financeModal, date: e.target.value })}
+                      className="w-full border border-slate-300 rounded-xl px-2.5 py-2 text-xs"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setFinanceModal(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className={`px-4 py-2 text-xs font-bold text-white rounded-xl ${
+                      financeModal.type === "ingreso" ? "bg-emerald-800" : "bg-rose-700"
+                    }`}
+                  >
+                    Guardar
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+</body>
+</html>
